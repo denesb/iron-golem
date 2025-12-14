@@ -23,7 +23,7 @@ def next_id():
 class minecraft_server:
     def __init__(self, path, config):
         self.id = next_id()
-        self.path = path
+        self.path = path.resolve()
         self.config = config
 
         self._process = None
@@ -50,7 +50,7 @@ class minecraft_server:
             str(self.path.joinpath('server.jar')),
             'nogui',
         ]
-        self._process = subprocess.Popen(args, stdout=self._logfile, stderr=self._logfile, text=True)
+        self._process = subprocess.Popen(args, stdout=self._logfile, stderr=self._logfile, cwd=self.path, text=True)
 
     def stop(self):
         self._process.terminate()
@@ -84,17 +84,22 @@ def index():
     rows = []
 
     for server in servers.values():
-        rows.append(f'<tr><td>{server.path}</td><td>{server.ip}:{server.port}</td></tr>')
+        rows.append(f'<tr><td>{server.id}</td><td>{server.path}</td><td>{server.ip}:{server.port}</td></tr>')
 
-    return f"""<html>
+    return f"""<!doctype html>
+<html lang="en">
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Iron Golem</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
 </head>
 <body>
-    <table>
+    <table class="table">
         <thead>
             <tr>
-                <td>Server</td><td>Address:Port</td>
+                <td>Id</td><td>Server</td><td>Address:Port</td>
             </tr>
         </thead>
         <tbody>
