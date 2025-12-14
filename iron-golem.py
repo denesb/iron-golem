@@ -77,7 +77,7 @@ def parse_config(config_file):
     return config
 
 
-@bottle.route('/')
+@bottle.get('/')
 def index():
     logger.debug(f"index()")
 
@@ -110,14 +110,14 @@ def index():
 </html>"""
 
 
-@bottle.route('/start/<id>')
+@bottle.post('/start/<id>')
 def start(id):
     logger.debug(f"start({id})")
     servers[int(id)].start()
 
 
-@bottle.route('/stop/<id>')
-def start(id):
+@bottle.post('/stop/<id>')
+def stop(id):
     logger.debug(f"stop({id})")
     servers[int(id)].stop()
 
