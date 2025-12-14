@@ -9,6 +9,8 @@ import subprocess
 
 logger = logging.getLogger('iron-golem')
 
+root = pathlib.Path(__file__).resolve().parent
+
 servers = {}
 last_id = 0
 
@@ -108,6 +110,11 @@ def index():
     </table>
 </body>
 </html>"""
+
+
+@bottle.get('/favicon.ico')
+def favicon():
+    return bottle.static_file('./favicon.ico', root=root)
 
 
 @bottle.post('/start/<id>')
