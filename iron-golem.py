@@ -86,7 +86,7 @@ def index():
     rows = []
 
     for server in servers.values():
-        rows.append(f'<tr><td>{server.id}</td><td>{server.path}</td><td>{server.ip}:{server.port}</td></tr>')
+        rows.append(f'<tr><td>{server.id}</td><td>{server.path.name}</td><td>{server.ip}:{server.port}</td></tr>')
 
     return f"""<!doctype html>
 <html lang="en">
