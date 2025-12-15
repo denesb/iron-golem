@@ -39,6 +39,10 @@ class minecraft_server:
         return ip
 
     @property
+    def is_running(self):
+        return self._process is not None
+
+    @property
     def port(self):
         return int(self.config['server-port'])
 
@@ -56,6 +60,7 @@ class minecraft_server:
 
     def stop(self):
         self._process.terminate()
+        self._process = None
 
 
 
@@ -86,9 +91,26 @@ def index():
     rows = []
 
     for server in servers.values():
-        rows.append(f'<tr><td>{server.id}</td><td>{server.path.name}</td><td>{server.ip}:{server.port}</td></tr>')
+        if server.is_running:
+            button_class = "success"
+            button_text = "Stop"
+            status_class = "success"
+            status = "Running"
+        else:
+            button_class = "primary"
+            button_text = "Start"
+            status_class = "secondary"
+            status = "Not Running"
 
-    return f"""<!doctype html>
+        rows.append(f'''<tr>
+        <td>{server.id}</td>
+        <td>{server.path.name}</td>
+        <td>{server.ip}:{server.port}</td>
+        <td><span class="badge text-bg-{status_class}" id="server-{server.id}-status">{status}</span></td>
+        <td><button type="button" class="btn btn-{button_class}" id="server-{server.id}" onclick="toggleServer(event)">{button_text}</button></td>
+    </tr>''')
+
+    return f'''<!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
@@ -96,12 +118,13 @@ def index():
     <title>Iron Golem</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+    <script src="static/iron-golem.js"></script>
 </head>
 <body>
     <table class="table">
         <thead>
             <tr>
-                <td>Id</td><td>Server</td><td>Address:Port</td>
+                <td>Id</td><td>Server</td><td>Address:Port</td><td>Status</td><td></td>
             </tr>
         </thead>
         <tbody>
@@ -109,12 +132,17 @@ def index():
         </tbody>
     </table>
 </body>
-</html>"""
+</html>'''
 
 
 @bottle.get('/favicon.ico')
 def favicon():
     return bottle.static_file('./favicon.ico', root=root)
+
+
+@bottle.get('/static/<filepath:path>')
+def static(filepath):
+    return bottle.static_file(filepath, root=root)
 
 
 @bottle.post('/start/<id>')
