@@ -95,19 +95,28 @@ def index():
             button_class = "success"
             button_text = "Stop"
             status_class = "success"
-            status = "Running"
+            status_text = "Running"
         else:
             button_class = "primary"
             button_text = "Start"
             status_class = "secondary"
-            status = "Not Running"
+            status_text = "Not Running"
 
         rows.append(f'''<tr>
         <td>{server.id}</td>
-        <td>{server.path.name}</td>
-        <td>{server.ip}:{server.port}</td>
-        <td><span class="badge text-bg-{status_class}" id="server-{server.id}-status">{status}</span></td>
+        <td><a class="btn btn-link" data-bs-toggle="collapse" href="#server-details-{server.id}" role="button" aria-expanded="false" aria-controls="server-details-{server.id}">{server.path.name}</a>
         <td><button type="button" class="btn btn-{button_class}" id="server-{server.id}" onclick="toggleServer(event)">{button_text}</button></td>
+    </tr>
+    <tr id="server-details-{server.id}" class="collapse">
+        <td colspan=3>
+            <div class="card card-body">
+                <table class="table table-striped-columns">
+                    <tr><td>Address</td><td>{server.ip}</td></tr>
+                    <tr><td>Port</td><td>{server.port}</td></tr>
+                    <tr><td>Status</td><td><span id="server-{server.id}-status" class="badge text-bg-{status_class}">{status_text}</span></td></tr>
+                </table>
+            </div>
+        </td>
     </tr>''')
 
     return f'''<!doctype html>
@@ -124,7 +133,7 @@ def index():
     <table class="table">
         <thead>
             <tr>
-                <td>Id</td><td>Server</td><td>Address:Port</td><td>Status</td><td></td>
+                <td>#</td><td>Server</td><td>Status</td>
             </tr>
         </thead>
         <tbody>
