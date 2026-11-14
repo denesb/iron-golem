@@ -16,6 +16,14 @@ root = pathlib.Path(__file__).resolve().parent
 servers = {}
 last_id = 0
 
+# Network name -> interface name, filled in from the command line in main.
+networks = {}
+network_labels = {
+    'all': 'All interfaces',
+    'lan': 'Local network',
+    'vpn': 'VPN',
+}
+
 
 def next_id():
     global last_id
@@ -49,6 +57,17 @@ class minecraft_server:
         mode = self.config.get('gamemode', 'survival')
         # Old server versions use numeric game modes.
         return {'0': 'survival', '1': 'creative'}.get(mode, mode)
+
+    @property
+    def network(self):
+        """The network the server listens on: 'all', 'lan', 'vpn' or None (custom address)."""
+        ip = self.config.get('server-ip', '')
+        if ip == '':
+            return 'all'
+        for name in networks:
+            if ip in interface_addresses().get(networks[name], []):
+                return name
+        return None
 
     @property
     def listen_addresses(self):
@@ -127,6 +146,23 @@ def interface_addresses():
     return result
 
 
+def network_address(network):
+    """Return the address to listen on for the given network, '' means all, None means unavailable."""
+    if network == 'all':
+        return ''
+    addrs = interface_addresses().get(networks.get(network), [])
+    return addrs[0] if addrs else None
+
+
+def default_route_interface():
+    out = subprocess.run(['ip', '-j', 'route', 'show', 'default'], capture_output=True, text=True).stdout
+    try:
+        return json.loads(out)[0]['dev']
+    except (ValueError, IndexError, KeyError):
+        return None
+
+
+
 def parse_config(config_file):
     config = {}
     with open (config_file, 'r') as f:
@@ -164,6 +200,14 @@ def render_server(server):
     gamemode = server.gamemode
     other_gamemode = 'survival' if gamemode == 'creative' else 'creative'
 
+    network_buttons = []
+    current_network = server.network
+    for name, label in network_labels.items():
+        checked = 'checked' if name == current_network else ''
+        disabled = 'disabled' if network_address(name) is None else ''
+        network_buttons.append(f'''<input type="radio" class="btn-check" name="network-{server.id}" id="network-{server.id}-{name}" autocomplete="off" {checked} {disabled} onchange="setNetwork({server.id}, '{name}')">
+                        <label class="btn btn-outline-primary" for="network-{server.id}-{name}">{label}</label>''')
+
     return f'''<tr>
         <td>{server.id}</td>
         <td><a class="btn btn-link" data-bs-toggle="collapse" href="#server-details-{server.id}" role="button" aria-expanded="false" aria-controls="server-details-{server.id}">{html.escape(server.path.name)}</a></td>
@@ -179,6 +223,9 @@ def render_server(server):
                     <tr><td>Status</td><td><span id="server-{server.id}-status" class="badge text-bg-{status_class}">{status_text}</span></td></tr>
                     <tr><td>Game mode</td><td>{gamemode.capitalize()}
                         <button type="button" class="btn btn-sm btn-outline-primary ms-2" onclick="setGamemode(event, {server.id}, '{other_gamemode}')">Switch to {other_gamemode}</button></td></tr>
+                    <tr><td>Network</td><td><div class="btn-group btn-group-sm flex-wrap" role="group" id="network-{server.id}">
+                        {"".join(network_buttons)}
+                    </div></td></tr>
                 </table>
             </div>
         </td>
@@ -248,6 +295,18 @@ def set_gamemode(id):
     servers[int(id)].update_config({'gamemode': gamemode, 'force-gamemode': 'true'})
 
 
+@bottle.post('/network/<id>')
+def set_network(id):
+    network = bottle.request.forms.get('network')
+    logger.debug(f"set_network({id}, {network})")
+    if network not in network_labels:
+        bottle.abort(400, f"invalid network: {network}")
+    address = network_address(network)
+    if address is None:
+        bottle.abort(409, f"network {network} has no address")
+    servers[int(id)].update_config({'server-ip': address})
+
+
 def find_server_dirs(path):
     dirs = []
     for f in path.iterdir():
@@ -270,8 +329,14 @@ if __name__ == '__main__':
     parser.add_argument("-a", "--address", action="store", type=str, default='localhost', help="Address to listen on")
     parser.add_argument("-p", "--port", action="store", type=int, default=10000, help="Port to listen on")
     parser.add_argument("-d", "--directory", action="store", type=str, default=".", help="Path to directory with the minecraft servers")
+    parser.add_argument("--lan-interface", action="store", type=str, default=None, help="Local network interface (default: interface of the default route)")
+    parser.add_argument("--vpn-interface", action="store", type=str, default="tailscale0", help="VPN interface")
 
     args = parser.parse_args()
+
+    networks['lan'] = args.lan_interface or default_route_interface()
+    networks['vpn'] = args.vpn_interface
+    logger.info(f"local network interface: {networks['lan']}, VPN interface: {networks['vpn']}")
 
     server_dirs = find_server_dirs(pathlib.Path(args.directory))
     for server_dir in server_dirs:

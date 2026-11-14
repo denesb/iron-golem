@@ -77,6 +77,14 @@ function setGamemode(event, id, gamemode) {
     postAndReload(`/gamemode/${id}`, { gamemode }, event.target, id);
 }
 
+function setNetwork(id, network) {
+    console.info(`Setting network of server #${id} to ${network}`)
+    for (const input of document.querySelectorAll(`#network-${id} input`)) {
+        input.disabled = true;
+    }
+    postAndReload(`/network/${id}`, { network }, null, id);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Re-open the server details after a reload (see postAndReload()).
     if (location.hash.startsWith('#server-details-')) {
