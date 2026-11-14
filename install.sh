@@ -14,6 +14,38 @@ venv_dir="$src_dir/.venv"
 unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 unit_file="$unit_dir/iron-golem.service"
 
+usage() {
+    cat <<EOF
+Usage: $0 [iron-golem arguments...]
+
+Install iron-golem as a systemd user service, running from a python venv
+in $venv_dir.
+
+All arguments are passed to iron-golem and baked into the service;
+re-run the script to change them. Relative paths are resolved against
+the current directory.
+
+  e.g. $0 --address 0.0.0.0 --directory ~/minecraft
+
+Options:
+  -h, --help  Show this help and exit, without installing anything
+EOF
+    if [[ -x "$venv_dir/bin/python" ]]; then
+        echo
+        echo "iron-golem arguments:"
+        "$venv_dir/bin/python" "$src_dir/iron-golem.py" --help | sed -n '/^options:/,$p'
+    else
+        echo
+        echo "See iron-golem.py --help for the available iron-golem arguments."
+    fi
+}
+
+for arg in "$@"; do
+    case "$arg" in
+        -h|--help) usage; exit 0 ;;
+    esac
+done
+
 if ! command -v java > /dev/null; then
     echo "warning: java not found, minecraft servers won't be able to start" >&2
 fi
