@@ -147,3 +147,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 });
+
+async function sendCommand(event, id) {
+    event.preventDefault();
+    const input = document.getElementById(`server-command-${id}`);
+    const error = document.getElementById(`server-command-${id}-error`);
+    const command = input.value.trim();
+    if (!command) {
+        return;
+    }
+
+    let message = null;
+    try {
+        const response = await fetch(`/command/${id}`, { method: 'POST', body: new URLSearchParams({ command }) });
+        if (!response.ok) {
+            message = (await response.json()).error;
+        }
+    } catch (e) {
+        message = `${e}`;
+    }
+
+    if (message) {
+        error.textContent = message;
+        input.classList.add('is-invalid');
+    } else {
+        input.value = '';
+        input.classList.remove('is-invalid');
+        // Scroll to the bottom so the command's output is visible.
+        const pre = document.getElementById(`server-log-${id}-content`);
+        pre.scrollTop = pre.scrollHeight;
+    }
+}

@@ -94,7 +94,22 @@ class minecraft_server:
             str(self.path.joinpath('server.jar')),
             'nogui',
         ]
-        self._process = subprocess.Popen(args, stdout=self._logfile, stderr=self._logfile, cwd=self.path, text=True)
+        self._process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=self._logfile, stderr=self._logfile,
+                                         cwd=self.path, text=True)
+
+    def send_command(self, command):
+        """Send a command to the server console, return False if the server is not running."""
+        if not self.is_running:
+            return False
+        # Echo the command into the log, so it is visible next to its output.
+        self._logfile.write(f'> {command}\n')
+        self._logfile.flush()
+        try:
+            self._process.stdin.write(command + '\n')
+            self._process.stdin.flush()
+        except BrokenPipeError:
+            return False
+        return True
 
     def stop(self):
         if self._process is None:
@@ -236,6 +251,12 @@ def render_server(server):
                 </div>
                 <div class="collapse server-log mt-2" id="server-log-{server.id}" data-server-id="{server.id}">
                     <pre class="bg-body-tertiary border rounded p-2 small mb-0" style="max-height: 50vh; overflow: auto; white-space: pre-wrap;" id="server-log-{server.id}-content"></pre>
+                    <form class="input-group input-group-sm mt-2" onsubmit="sendCommand(event, {server.id})">
+                        <span class="input-group-text font-monospace">&gt;</span>
+                        <input type="text" class="form-control font-monospace" id="server-command-{server.id}" placeholder="Console command, e.g. say hello" autocomplete="off" aria-label="Console command">
+                        <button class="btn btn-outline-primary" type="submit">Send</button>
+                        <div class="invalid-feedback" id="server-command-{server.id}-error"></div>
+                    </form>
                 </div>
             </div>
         </td>
@@ -315,6 +336,19 @@ def set_network(id):
     if address is None:
         bottle.abort(409, f"network {network} has no address")
     servers[int(id)].update_config({'server-ip': address})
+
+
+@bottle.post('/command/<id>')
+def command(id):
+    command = bottle.request.forms.getunicode('command', '').strip()
+    logger.info(f"command({id}, {command!r})")
+    if not command or '\n' in command or '\r' in command:
+        bottle.response.status = 400
+        return {'error': 'Command must be a single, non-empty line'}
+    if not servers[int(id)].send_command(command):
+        bottle.response.status = 409
+        return {'error': 'Server is not running'}
+    return {}
 
 
 @bottle.get('/log/<id>')
