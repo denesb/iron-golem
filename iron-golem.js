@@ -85,7 +85,60 @@ function setNetwork(id, network) {
     postAndReload(`/network/${id}`, { network }, null, id);
 }
 
+const logTails = {};
+
+async function pollLog(id) {
+    const tail = logTails[id];
+    if (!tail) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/log/${id}?offset=${tail.offset}`);
+        if (response.ok) {
+            const result = await response.json();
+            const pre = document.getElementById(`server-log-${id}-content`);
+            const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 5;
+            if (result.reset) {
+                pre.textContent = '';
+            }
+            pre.textContent += result.data;
+            tail.offset = result.offset;
+            if (atBottom) {
+                pre.scrollTop = pre.scrollHeight;
+            }
+        }
+    } catch (e) {
+        console.error(`Failed to fetch log of server #${id}: ${e}`);
+    }
+
+    // The tail may have been stopped (or restarted) while the request was in flight.
+    if (logTails[id] === tail) {
+        tail.timer = setTimeout(() => pollLog(id), 1000);
+    }
+}
+
+function startLogTail(id) {
+    stopLogTail(id);
+    logTails[id] = { offset: -1, timer: null };
+    pollLog(id);
+}
+
+function stopLogTail(id) {
+    const tail = logTails[id];
+    if (tail) {
+        clearTimeout(tail.timer);
+        delete logTails[id];
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    for (const log of document.querySelectorAll('.server-log')) {
+        const id = log.dataset.serverId;
+        log.addEventListener('shown.bs.collapse', () => startLogTail(id));
+        log.addEventListener('hidden.bs.collapse', () => stopLogTail(id));
+    }
+
     // Re-open the server details after a reload (see postAndReload()).
     if (location.hash.startsWith('#server-details-')) {
         const details = document.querySelector(location.hash);

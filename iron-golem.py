@@ -77,11 +77,15 @@ class minecraft_server:
         return [f'{addr} ({iface})' for iface, addrs in interface_addresses().items() for addr in addrs]
 
     @property
+    def log_path(self):
+        return self.path / 'server.log'
+
+    @property
     def port(self):
         return int(self.config['server-port'])
 
     def start(self):
-        self._logfile = open(self.path / 'server.log', 'w')
+        self._logfile = open(self.log_path, 'w')
         args = [
             '/usr/bin/java',
             '-Xmx1024M',
@@ -227,6 +231,12 @@ def render_server(server):
                         {"".join(network_buttons)}
                     </div></td></tr>
                 </table>
+                <div>
+                    <button class="btn btn-sm btn-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#server-log-{server.id}" aria-expanded="false" aria-controls="server-log-{server.id}">Log</button>
+                </div>
+                <div class="collapse server-log mt-2" id="server-log-{server.id}" data-server-id="{server.id}">
+                    <pre class="bg-body-tertiary border rounded p-2 small mb-0" style="max-height: 50vh; overflow: auto; white-space: pre-wrap;" id="server-log-{server.id}-content"></pre>
+                </div>
             </div>
         </td>
     </tr>'''
@@ -305,6 +315,39 @@ def set_network(id):
     if address is None:
         bottle.abort(409, f"network {network} has no address")
     servers[int(id)].update_config({'server-ip': address})
+
+
+@bottle.get('/log/<id>')
+def log(id):
+    """Return the log content after offset, or the tail of the log if offset is negative."""
+    path = servers[int(id)].log_path
+    offset = bottle.request.query.get('offset', default=-1, type=int)
+    reset = offset < 0
+
+    try:
+        size = path.stat().st_size
+    except FileNotFoundError:
+        return {'offset': 0, 'data': '', 'reset': True}
+
+    if offset > size:
+        # Log was truncated by a server (re)start.
+        offset = 0
+        reset = True
+
+    tail = offset < 0
+    if tail:
+        offset = max(0, size - 16 * 1024)
+
+    with open(path, 'rb') as f:
+        f.seek(offset)
+        data = f.read(1024 * 1024)
+
+    new_offset = offset + len(data)
+    if tail and offset > 0:
+        # Drop the partial first line.
+        data = data[data.find(b'\n') + 1:]
+
+    return {'offset': new_offset, 'data': data.decode('utf-8', errors='replace'), 'reset': reset}
 
 
 def find_server_dirs(path):
