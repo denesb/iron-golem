@@ -45,6 +45,12 @@ class minecraft_server:
         return self._process is not None and self._process.poll() is None
 
     @property
+    def gamemode(self):
+        mode = self.config.get('gamemode', 'survival')
+        # Old server versions use numeric game modes.
+        return {'0': 'survival', '1': 'creative'}.get(mode, mode)
+
+    @property
     def listen_addresses(self):
         ip = self.config.get('server-ip', '')
         if ip != '':
@@ -68,8 +74,46 @@ class minecraft_server:
         self._process = subprocess.Popen(args, stdout=self._logfile, stderr=self._logfile, cwd=self.path, text=True)
 
     def stop(self):
+        if self._process is None:
+            return
+        # The server saves the world on SIGTERM, give it time to finish.
         self._process.terminate()
+        try:
+            self._process.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            logger.warning(f"server {self.path.name} did not stop in time, killing it")
+            self._process.kill()
+            self._process.wait()
         self._process = None
+        self._logfile.close()
+        self._logfile = None
+
+    def update_config(self, changes):
+        """Change the given keys in server.properties, preserving the rest of the file.
+
+        If the server is running, it is stopped before and restarted after the change.
+        """
+        was_running = self.is_running
+        if was_running:
+            self.stop()
+
+        config_file = self.path / 'server.properties'
+        remaining = dict(changes)
+        lines = []
+        for line in config_file.read_text().splitlines():
+            stripped = line.strip()
+            if stripped and stripped[0] != '#' and '=' in stripped:
+                key = stripped.split('=', 1)[0].strip()
+                if key in remaining:
+                    line = f'{key}={remaining.pop(key)}'
+            lines.append(line)
+        lines += [f'{key}={value}' for key, value in remaining.items()]
+        config_file.write_text('\n'.join(lines) + '\n')
+
+        self.config = parse_config(config_file)
+
+        if was_running:
+            self.start()
 
 
 def interface_addresses():
@@ -117,6 +161,9 @@ def render_server(server):
 
     addresses = '<br>'.join(f'{html.escape(addr)}' for addr in server.listen_addresses)
 
+    gamemode = server.gamemode
+    other_gamemode = 'survival' if gamemode == 'creative' else 'creative'
+
     return f'''<tr>
         <td>{server.id}</td>
         <td><a class="btn btn-link" data-bs-toggle="collapse" href="#server-details-{server.id}" role="button" aria-expanded="false" aria-controls="server-details-{server.id}">{html.escape(server.path.name)}</a></td>
@@ -130,6 +177,8 @@ def render_server(server):
                     <tr><td>Listen address</td><td>{addresses}</td></tr>
                     <tr><td>Port</td><td>{server.port}</td></tr>
                     <tr><td>Status</td><td><span id="server-{server.id}-status" class="badge text-bg-{status_class}">{status_text}</span></td></tr>
+                    <tr><td>Game mode</td><td>{gamemode.capitalize()}
+                        <button type="button" class="btn btn-sm btn-outline-primary ms-2" onclick="setGamemode(event, {server.id}, '{other_gamemode}')">Switch to {other_gamemode}</button></td></tr>
                 </table>
             </div>
         </td>
@@ -187,6 +236,16 @@ def start(id):
 def stop(id):
     logger.debug(f"stop({id})")
     servers[int(id)].stop()
+
+
+@bottle.post('/gamemode/<id>')
+def set_gamemode(id):
+    gamemode = bottle.request.forms.get('gamemode')
+    logger.debug(f"set_gamemode({id}, {gamemode})")
+    if gamemode not in ('survival', 'creative'):
+        bottle.abort(400, f"invalid game mode: {gamemode}")
+    # Without force-gamemode, players who already joined keep their previous mode.
+    servers[int(id)].update_config({'gamemode': gamemode, 'force-gamemode': 'true'})
 
 
 def find_server_dirs(path):

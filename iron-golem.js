@@ -54,3 +54,35 @@ function toggleServer(event) {
         start(id);
     }
 }
+
+async function postAndReload(url, params, button, id) {
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Applying...';
+    }
+
+    const response = await fetch(url, { method: 'POST', body: new URLSearchParams(params) });
+
+    if (!response.ok) {
+        console.error(`POST ${url} failed: ${response.status} ${response.statusText}`);
+    }
+
+    // Reload to show the new configuration, keeping the details open.
+    location.hash = `server-details-${id}`;
+    location.reload();
+}
+
+function setGamemode(event, id, gamemode) {
+    console.info(`Setting game mode of server #${id} to ${gamemode}`)
+    postAndReload(`/gamemode/${id}`, { gamemode }, event.target, id);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Re-open the server details after a reload (see postAndReload()).
+    if (location.hash.startsWith('#server-details-')) {
+        const details = document.querySelector(location.hash);
+        if (details) {
+            bootstrap.Collapse.getOrCreateInstance(details).show();
+        }
+    }
+});
