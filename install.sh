@@ -30,10 +30,12 @@ the current directory.
 Options:
   -h, --help  Show this help and exit, without installing anything
 EOF
-    if [[ -x "$venv_dir/bin/python" ]]; then
+    # The venv may be missing or incomplete (e.g. an interrupted install).
+    local golem_help
+    if golem_help=$("$venv_dir/bin/python" "$src_dir/iron-golem.py" --help 2>/dev/null); then
         echo
         echo "iron-golem arguments:"
-        "$venv_dir/bin/python" "$src_dir/iron-golem.py" --help | sed -n '/^options:/,$p'
+        sed -n '/^options:/,$p' <<< "$golem_help"
     else
         echo
         echo "See iron-golem.py --help for the available iron-golem arguments."
