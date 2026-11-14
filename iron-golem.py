@@ -3,6 +3,7 @@
 import argparse
 import bottle
 import html
+import json
 import logging
 import pathlib
 import subprocess
@@ -44,6 +45,13 @@ class minecraft_server:
         return self._process is not None and self._process.poll() is None
 
     @property
+    def listen_addresses(self):
+        ip = self.config.get('server-ip', '')
+        if ip != '':
+            return [ip]
+        return [f'{addr} ({iface})' for iface, addrs in interface_addresses().items() for addr in addrs]
+
+    @property
     def port(self):
         return int(self.config['server-port'])
 
@@ -63,6 +71,16 @@ class minecraft_server:
         self._process.terminate()
         self._process = None
 
+
+def interface_addresses():
+    """Return a dict of interface name -> list of IPv4 addresses."""
+    out = subprocess.run(['ip', '-j', '-4', 'addr', 'show'], capture_output=True, text=True, check=True).stdout
+    result = {}
+    for iface in json.loads(out):
+        addrs = [a['local'] for a in iface.get('addr_info', []) if a.get('family') == 'inet']
+        if addrs:
+            result[iface['ifname']] = addrs
+    return result
 
 
 def parse_config(config_file):
@@ -97,6 +115,8 @@ def render_server(server):
         status_class = "secondary"
         status_text = "Not Running"
 
+    addresses = '<br>'.join(f'{html.escape(addr)}' for addr in server.listen_addresses)
+
     return f'''<tr>
         <td>{server.id}</td>
         <td><a class="btn btn-link" data-bs-toggle="collapse" href="#server-details-{server.id}" role="button" aria-expanded="false" aria-controls="server-details-{server.id}">{html.escape(server.path.name)}</a></td>
@@ -107,7 +127,7 @@ def render_server(server):
         <td colspan=4>
             <div class="card card-body">
                 <table class="table table-striped-columns">
-                    <tr><td>Address</td><td>{server.ip}</td></tr>
+                    <tr><td>Listen address</td><td>{addresses}</td></tr>
                     <tr><td>Port</td><td>{server.port}</td></tr>
                     <tr><td>Status</td><td><span id="server-{server.id}-status" class="badge text-bg-{status_class}">{status_text}</span></td></tr>
                 </table>
