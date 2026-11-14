@@ -2,6 +2,7 @@
 
 import argparse
 import bottle
+import html
 import logging
 import pathlib
 import subprocess
@@ -40,7 +41,7 @@ class minecraft_server:
 
     @property
     def is_running(self):
-        return self._process is not None
+        return self._process is not None and self._process.poll() is None
 
     @property
     def port(self):
@@ -75,7 +76,7 @@ def parse_config(config_file):
             if l[0] == '#':
                 continue
 
-            key, value = l.split('=')
+            key, value = l.split('=', 1)
 
             key = key.replace('"', '')
 
@@ -84,27 +85,21 @@ def parse_config(config_file):
     return config
 
 
-@bottle.get('/')
-def index():
-    logger.debug(f"index()")
+def render_server(server):
+    if server.is_running:
+        button_class = "success"
+        button_text = "Stop"
+        status_class = "success"
+        status_text = "Running"
+    else:
+        button_class = "primary"
+        button_text = "Start"
+        status_class = "secondary"
+        status_text = "Not Running"
 
-    rows = []
-
-    for server in servers.values():
-        if server.is_running:
-            button_class = "success"
-            button_text = "Stop"
-            status_class = "success"
-            status_text = "Running"
-        else:
-            button_class = "primary"
-            button_text = "Start"
-            status_class = "secondary"
-            status_text = "Not Running"
-
-        rows.append(f'''<tr>
+    return f'''<tr>
         <td>{server.id}</td>
-        <td><a class="btn btn-link" data-bs-toggle="collapse" href="#server-details-{server.id}" role="button" aria-expanded="false" aria-controls="server-details-{server.id}">{server.path.name}</a>
+        <td><a class="btn btn-link" data-bs-toggle="collapse" href="#server-details-{server.id}" role="button" aria-expanded="false" aria-controls="server-details-{server.id}">{html.escape(server.path.name)}</a></td>
         <td><button type="button" class="btn btn-{button_class}" id="server-{server.id}" onclick="toggleServer(event)">{button_text}</button></td>
     </tr>
     <tr id="server-details-{server.id}" class="collapse">
@@ -117,7 +112,14 @@ def index():
                 </table>
             </div>
         </td>
-    </tr>''')
+    </tr>'''
+
+
+@bottle.get('/')
+def index():
+    logger.debug(f"index()")
+
+    rows = [render_server(server) for server in servers.values()]
 
     return f'''<!doctype html>
 <html lang="en">
