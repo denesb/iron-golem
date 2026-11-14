@@ -100,10 +100,11 @@ def render_server(server):
     return f'''<tr>
         <td>{server.id}</td>
         <td><a class="btn btn-link" data-bs-toggle="collapse" href="#server-details-{server.id}" role="button" aria-expanded="false" aria-controls="server-details-{server.id}">{html.escape(server.path.name)}</a></td>
+        <td>{server.port}</td>
         <td><button type="button" class="btn btn-{button_class}" id="server-{server.id}" onclick="toggleServer(event)">{button_text}</button></td>
     </tr>
     <tr id="server-details-{server.id}" class="collapse">
-        <td colspan=3>
+        <td colspan=4>
             <div class="card card-body">
                 <table class="table table-striped-columns">
                     <tr><td>Address</td><td>{server.ip}</td></tr>
@@ -135,7 +136,7 @@ def index():
     <table class="table">
         <thead>
             <tr>
-                <td>#</td><td>Server</td><td>Status</td>
+                <td>#</td><td>Server</td><td>Port</td><td>Status</td>
             </tr>
         </thead>
         <tbody>
