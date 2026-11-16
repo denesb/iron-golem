@@ -6,6 +6,8 @@ import html
 import json
 import logging
 import pathlib
+import socket
+import struct
 import subprocess
 
 
@@ -84,6 +86,11 @@ class minecraft_server:
     def port(self):
         return int(self.config['server-port'])
 
+    @property
+    def connect_address(self):
+        """Address to reach the server on from this host."""
+        return self.config.get('server-ip', '') or '127.0.0.1'
+
     def start(self):
         self._logfile = open(self.log_path, 'w')
         args = [
@@ -152,6 +159,65 @@ class minecraft_server:
 
         if was_running:
             self.start()
+
+
+def _encode_varint(value):
+    value &= 0xffffffff  # negative numbers are sent as 32 bit two's complement
+    out = bytearray()
+    while True:
+        byte = value & 0x7f
+        value >>= 7
+        if value:
+            out.append(byte | 0x80)
+        else:
+            out.append(byte)
+            return bytes(out)
+
+
+def _read_exactly(sock, n):
+    data = bytearray()
+    while len(data) < n:
+        chunk = sock.recv(n - len(data))
+        if not chunk:
+            raise ConnectionError("connection closed by server")
+        data += chunk
+    return bytes(data)
+
+
+def _read_varint(sock):
+    value = 0
+    for i in range(5):
+        byte = _read_exactly(sock, 1)[0]
+        value |= (byte & 0x7f) << (7 * i)
+        if not byte & 0x80:
+            return value
+    raise ValueError("varint too long")
+
+
+def _encode_packet(packet_id, payload=b''):
+    data = _encode_varint(packet_id) + payload
+    return _encode_varint(len(data)) + data
+
+
+def ping_status(host, port, timeout=2):
+    """Query a server's status with the Server List Ping protocol, return the decoded JSON response.
+
+    See https://minecraft.wiki/w/Java_Edition_protocol/Server_List_Ping
+    """
+    with socket.create_connection((host, port), timeout=timeout) as sock:
+        encoded_host = host.encode('utf-8')
+        handshake = (_encode_varint(-1)  # protocol version, -1 means "just pinging"
+                     + _encode_varint(len(encoded_host)) + encoded_host
+                     + struct.pack('>H', port)
+                     + _encode_varint(1))  # next state: status
+        sock.sendall(_encode_packet(0x00, handshake) + _encode_packet(0x00))
+
+        _read_varint(sock)  # packet length
+        packet_id = _read_varint(sock)
+        if packet_id != 0x00:
+            raise ValueError(f"unexpected packet id {packet_id:#x}")
+        length = _read_varint(sock)
+        return json.loads(_read_exactly(sock, length).decode('utf-8'))
 
 
 def interface_addresses():
@@ -240,6 +306,7 @@ def render_server(server):
                     <tr><td>Listen address</td><td>{addresses}</td></tr>
                     <tr><td>Port</td><td>{server.port}</td></tr>
                     <tr><td>Status</td><td><span id="server-{server.id}-status" class="badge text-bg-{status_class}">{status_text}</span></td></tr>
+                    <tr><td>Players</td><td id="server-{server.id}-players">&mdash;</td></tr>
                     <tr><td>Game mode</td><td>{gamemode.capitalize()}
                         <button type="button" class="btn btn-sm btn-outline-primary ms-2" onclick="setGamemode(event, {server.id}, '{other_gamemode}')">Switch to {other_gamemode}</button></td></tr>
                     <tr><td>Network</td><td><div class="btn-group btn-group-sm flex-wrap" role="group" id="network-{server.id}">
@@ -349,6 +416,25 @@ def command(id):
         bottle.response.status = 409
         return {'error': 'Server is not running'}
     return {}
+
+
+@bottle.get('/players/<id>')
+def players(id):
+    server = servers[int(id)]
+    if not server.is_running:
+        return {'running': False}
+    try:
+        status = ping_status(server.connect_address, server.port)
+    except (OSError, ValueError) as e:
+        logger.debug(f"players({id}): ping failed: {e}")
+        return {'running': True, 'error': 'Not responding (still starting?)'}
+    players = status.get('players', {})
+    return {
+        'running': True,
+        'online': players.get('online', 0),
+        'max': players.get('max', 0),
+        'names': [p.get('name', '') for p in players.get('sample', [])],
+    }
 
 
 @bottle.get('/log/<id>')

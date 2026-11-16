@@ -132,7 +132,66 @@ function stopLogTail(id) {
     }
 }
 
+const playerPolls = {};
+
+async function pollPlayers(id) {
+    const poll = playerPolls[id];
+    if (!poll) {
+        return;
+    }
+
+    const cell = document.getElementById(`server-${id}-players`);
+    try {
+        const response = await fetch(`/players/${id}`);
+        if (response.ok) {
+            const result = await response.json();
+            cell.textContent = '';
+            if (!result.running) {
+                cell.textContent = '\u2014';
+            } else if (result.error) {
+                cell.textContent = result.error;
+            } else {
+                cell.textContent = `${result.online} / ${result.max}`;
+                if (result.names.length > 0) {
+                    const names = document.createElement('div');
+                    names.className = 'small text-body-secondary';
+                    names.textContent = result.names.join(', ');
+                    cell.appendChild(names);
+                }
+            }
+        }
+    } catch (e) {
+        console.error(`Failed to fetch players of server #${id}: ${e}`);
+    }
+
+    // Polling may have been stopped (or restarted) while the request was in flight.
+    if (playerPolls[id] === poll) {
+        poll.timer = setTimeout(() => pollPlayers(id), 10000);
+    }
+}
+
+function startPlayerPoll(id) {
+    stopPlayerPoll(id);
+    playerPolls[id] = { timer: null };
+    pollPlayers(id);
+}
+
+function stopPlayerPoll(id) {
+    const poll = playerPolls[id];
+    if (poll) {
+        clearTimeout(poll.timer);
+        delete playerPolls[id];
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    for (const details of document.querySelectorAll('[id^="server-details-"]')) {
+        const id = details.id.split('-')[2];
+        // Events of the nested log collapse bubble up here too, ignore those.
+        details.addEventListener('shown.bs.collapse', (e) => { if (e.target === details) startPlayerPoll(id); });
+        details.addEventListener('hidden.bs.collapse', (e) => { if (e.target === details) stopPlayerPoll(id); });
+    }
+
     for (const log of document.querySelectorAll('.server-log')) {
         const id = log.dataset.serverId;
         log.addEventListener('shown.bs.collapse', () => startLogTail(id));
